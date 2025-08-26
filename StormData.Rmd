@@ -1,0 +1,21 @@
+---
+title: "Rep_assign2"
+author: "JY"
+date: "2025-08-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Read data
+```{r}
+df <- readr::read_csv("./repdata_data_StormData.csv")
+```
+
+
+```{r}
+
+```
+
