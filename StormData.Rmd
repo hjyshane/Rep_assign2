@@ -9,13 +9,240 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Read data
+# Load libraries and set seed
 ```{r}
-df <- readr::read_csv("./repdata_data_StormData.csv")
+# library load
+library(tidyverse)
+library(ggplot2)
 ```
 
-
 ```{r}
+# set seed for reproducibility
+set.seed(827)
+```
+
+# Read data
+```{r}
+df <- readr::read_csv("./repdata_data_StormData.csv.bz2")
+```
+
+# Preprocess data
+```{r}
+# get only relevant columns
+df_selected <- df %>%
+  select(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+
+# filter out rows with zero damage and zero casualties
+df_filtered <- df_selected %>%
+  filter((PROPDMG > 0 | CROPDMG > 0 | FATALITIES > 0 | INJURIES > 0))
+
+# Function to convert damage exponents to multipliers
+convert_damage <- function(exp) {
+  case_when(
+    exp %in% c("H", "h") ~ 100,
+    exp %in% c("K", "k") ~ 1000,
+    exp %in% c("M", "m") ~ 1000000,
+    exp %in% c("B", "b") ~ 1000000000,
+    exp %in% c("", "0") ~ 1,
+    exp %in% c("1") ~ 10,
+    exp %in% c("2") ~ 100,
+    exp %in% c("3") ~ 1000,
+    exp %in% c("4") ~ 10000,
+    exp %in% c("5") ~ 100000,
+    exp %in% c("6") ~ 1000000,
+    exp %in% c("7") ~ 10000000,
+    exp %in% c("8") ~ 100000000,
+    exp %in% c("9") ~ 1000000000,
+    TRUE ~ NA_real_
+  )
+}
+
+# Apply conversion to damage columns
+df_converted <- df_filtered %>%
+  mutate(
+    PROPDMGEXP = convert_damage(PROPDMGEXP),
+    CROPDMGEXP = convert_damage(CROPDMGEXP),
+    PROPDMG = PROPDMG * PROPDMGEXP,
+    CROPDMG = CROPDMG * CROPDMGEXP
+  ) %>%
+  select(-PROPDMGEXP, -CROPDMGEXP)
+```
+
+### Clean up EVTYPE
+```{r}
+# Standardize event types to uppercase and trim whitespace
+df_converted <- df_converted %>%
+  mutate(EVTYPE = toupper(trimws(EVTYPE)))
+
+# event type check
+evtype <- unique(df_converted$EVTYPE) %>% sort()
+length(evtype)
+
+# Group similar event types
+library(dplyr)
+library(stringr)
+
+# NOAA 48 target labels
+noaa48 <- c(
+  "Astronomical Low Tide","Avalanche","Blizzard","Coastal Flood","Cold/Wind Chill",
+  "Debris Flow","Dense Fog","Dense Smoke","Drought","Dust Devil","Dust Storm",
+  "Excessive Heat","Extreme Cold/Wind Chill","Flash Flood","Flood","Frost/Freeze",
+  "Funnel Cloud","Freezing Fog","Hail","Heat","Heavy Rain","Heavy Snow","High Surf",
+  "High Wind","Hurricane (Typhoon)","Ice Storm","Lake-Effect Snow","Lakeshore Flood",
+  "Lightning","Marine Hail","Marine High Wind","Marine Strong Wind",
+  "Marine Thunderstorm Wind","Rip Current","Seiche","Sleet","Storm Surge/Tide",
+  "Strong Wind","Thunderstorm Wind","Tornado","Tropical Depression","Tropical Storm",
+  "Tsunami","Volcanic Ash","Waterspout","Wildfire","Winter Storm","Winter Weather"
+)
+
+df_converted <- df_converted %>%
+  mutate(
+    EVTYPE = toupper(EVTYPE),
+    EVTYPE = str_replace_all(EVTYPE, "\\\\", "/"),
+    EVTYPE = str_replace_all(EVTYPE, "[[:space:]]+", " "),
+    EVTYPE = str_trim(EVTYPE)
+  ) %>%
+
+  mutate(EVTYPE_std = case_when(
+
+    str_detect(EVTYPE, "FLOOD|RAPIDLY RISING WATER|URBAN.*SMALL|URBAN/SMALL STREAM|URBAN AND SMALL|URBAN SMALL|URBAN/SML STREAM FLD") ~ "Flood",
+    str_detect(EVTYPE, "STORM SURGE|STORM SURGE/TIDE|COASTAL SURGE|COASTAL STORM|COASTALSTORM") ~ "Flood",
+    str_detect(EVTYPE, "COASTAL FLOOD|EROSION/CSTL FLOOD|COASTAL FLOODING") ~ "Flood",
+    str_detect(EVTYPE, "LAKESHORE FLOOD") ~ "Flood",
+    str_detect(EVTYPE, "FLASH FLOOD") ~ "Flood",
+
+    # Lightning
+    str_detect(EVTYPE, "LIGHTNING|LIGNTNING|LIGHTING") ~ "Lightning",
+
+    # Tropical & hurricane
+    str_detect(EVTYPE, "HURRICANE|TYPHOON") ~ "Hurricane",
+    str_detect(EVTYPE, "TROPICAL STORM") ~ "Tropical",
+    str_detect(EVTYPE, "TROPICAL DEPRESSION") ~ "Tropical",
+
+    # Tornado/funnel/waterspout
+    str_detect(EVTYPE, "TORNADO|TORNDAO") ~ "Tornado",
+    str_detect(EVTYPE, "FUNNEL CLOUD|LANDSPOUT") ~ "Funnel Cloud",
+    str_detect(EVTYPE, "WATERSPOUT") ~ "Waterspout",
+
+    # Floods
+
+    # Surf / marine waves
+    str_detect(EVTYPE, "RIP CURRENT|COASTAL EROSION") ~ "Marine Wave",
+    str_detect(EVTYPE, "ASTRONOMICAL LOW TIDE|ASTRONOMICAL HIGH TIDE") ~ "Marine Wave",
+    str_detect(EVTYPE, "HIGH SURF|HEAVY SURF|HAZARDOUS SURF|ROUGH SURF|SWELL|HIGH TIDES|HIGH WAVES") ~ "Marine Wave",
+    str_detect(EVTYPE, "STORM TIDE") ~ "Marine Wave",  
+
+    # Wind 
+    str_detect(EVTYPE, "\\bWIND\\b|HIGH WIND|STRONG WIND|WIND STORM|GUST|STRONG WIND|TSTM|THUNDERSTORM|DOWNBURST|MICROBURST") ~ "Wind",
+    
+    # Winter
+    str_detect(EVTYPE, "BLIZZARD") ~ "Blizzard",
+    str_detect(EVTYPE, "WINTER WEATHER|WINTRY MIX") ~ "Winter",
+    str_detect(EVTYPE, "WINTER STORM") ~ "Winter",
+    str_detect(EVTYPE, "LAKE[- ]?EFFECT SNOW") ~ "Snow",
+    str_detect(EVTYPE, "HEAVY SNOW") ~ "Snow",
+    str_detect(EVTYPE, "SLEET") ~ "Sleet",
+    str_detect(EVTYPE, "ICE STORM") ~ "Ice Storm",
+
+    # Ice/Freeze/Cold
+    str_detect(EVTYPE, "FROST/FREEZE|FROST\\\\FREEZE|FROST|FREEZE") ~ "Cold/Freeze",
+    str_detect(EVTYPE, "EXTREME COLD|EXTREME WIND ?CHILL") ~ "Cold/Freeze",
+    str_detect(EVTYPE, "COLD/WIND ?CHILL|COLD WEATHER|COLD WAVE|LOW TEMPERATURE") ~ "Cold/Freeze",
+    str_detect(EVTYPE, "FREEZING DRIZZLE|FREEZING RAIN|FREEZING SPRAY|ICE|ICY ROADS|ICE ON ROAD|ICE ROADS|GLAZE( ICE)?|GLAZE/ICE STORM|HEAVY MIX|MIXED PRECIP") ~ "Cold/Freeze",
+
+    # Heat
+    str_detect(EVTYPE, "EXCESSIVE HEAT") ~ "Heat",
+    str_detect(EVTYPE, "HEAT WAVE|HEAT") ~ "Heat",
+
+    # Precipitation (rain)
+    str_detect(EVTYPE, "HEAVY RAIN|TORRENTIAL RAINFALL|PRECIPITATION|RAINSTORM|RAIN/SNOW|RAIN/WIND|RAIN") ~ "Rain",
+
+    # Dust / Fog / Smoke
+    str_detect(EVTYPE, "DUST DEVIL") ~ "Dust",
+    str_detect(EVTYPE, "DUST STORM|BLOWING DUST") ~ "Dust",
+    str_detect(EVTYPE, "FREEZING FOG") ~ "Fog",
+    str_detect(EVTYPE, "\\bFOG\\b|DENSE FOG") ~ "Fog",
+    str_detect(EVTYPE, "DENSE SMOKE") ~ "Smoke",
+
+    # Geophysical
+    str_detect(EVTYPE, "AVALANCHE|AVALANCE") ~ "Avalanche",
+    str_detect(EVTYPE, "DEBRIS FLOW|LANDSLIDE|LANDSLUMP|MUD ?SLIDE|ROCK SLIDE|MUDSLIDE|MUD SLIDES") ~ "Landslide",
+    str_detect(EVTYPE, "SEICHE") ~ "Seiche",
+    str_detect(EVTYPE, "TSUNAMI") ~ "Tsunami",
+    str_detect(EVTYPE, "VOLCANIC ASH|VOLCANIC") ~ "Volcanic",
+
+    # Marine winds/hail/thunderstorm
+    str_detect(EVTYPE, "MARINE TSTM WIND|MARINE THUNDERSTORM WIND") ~ "Marine Wind",
+    str_detect(EVTYPE, "MARINE STRONG WIND") ~ "Marine Wind",
+    str_detect(EVTYPE, "MARINE HIGH WIND") ~ "Marine Wind",
+    str_detect(EVTYPE, "MARINE HAIL") ~ "Marine Hail",
+
+    # Drought / Wildfire
+    str_detect(EVTYPE, "DROUGHT") ~ "Drought",
+    str_detect(EVTYPE, "WILDFIRE|WILD/FOREST FIRE|FOREST FIRE|WILD FIRES|WILDFIRES|BRUSH FIRE|GRASS FIRE") ~ "Fire",
+
+    # Hail
+    str_detect(EVTYPE, "\\bHAIL\\b|HAILSTORM|HAIL \\d") ~ "Hail",
+
+    # OTHER 
+    TRUE ~ "Other"
+  ))
+
+# check again
+evtype <- unique(df_converted$EVTYPE_std) %>% sort()
+length(evtype)
+```
+
+# Results
+## Q1. harmful events to population health
+```{r}
+# Summarize total fatalities and injuries by event type
+health <- df_converted %>%
+  group_by(EVTYPE_std) %>%
+  summarise(
+    total_fatalities = sum(FATALITIES, na.rm = TRUE),
+    total_injuries = sum(INJURIES, na.rm = TRUE)
+  ) %>%
+  ungroup() 
+
+health_long <- health %>%
+  pivot_longer(cols = c(total_fatalities, total_injuries), names_to = "type", values_to = "count")
+
+# Combined plot for fatalities and injuries
+
+ggplot(health_long, aes(x = reorder(EVTYPE_std, count), y = count, fill = type)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Total Fatalities and Injuries by Event Type", x = "Event Type", y = "Count", fill = "Type")
+
+message('Most harmful events to population health are Tornado, Wind, Heat, Flood, and Lightning.')
+```
+
+## Q2. Greatest economic consequences
+```{r}
+# Summarize total property and crop damage by event type
+economic <- df_converted %>%
+  group_by(EVTYPE_std) %>%
+  summarise(
+    total_property_damage = sum(PROPDMG, na.rm = TRUE),
+    total_crop_damage = sum(CROPDMG, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+economic_long <- economic %>%
+  pivot_longer(cols = c(total_property_damage, total_crop_damage), names_to = "type", values_to = "amount")
+
+# Combined plot for property and crop damage
+ggplot(economic_long, aes(x = reorder(EVTYPE_std, amount), y = amount, fill = type)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Total Property and Crop Damage by Event Type", x = "Event Type", y = "Amount (USD)", fill = "Type")
+
+message('Events with greatest economic consequences are Flood, Hurricane, Tornado, Wind, and Hail.')
+
+# Report
+message("Most harmful events to population health are Tornado, Wind, Heat, Flood, and Lightning.\n")
+message("Events with greatest economic consequences are Flood, Hurricane, Tornado, Wind, and Hail.\n")
 
 ```
 
