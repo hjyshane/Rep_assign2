@@ -357,6 +357,17 @@ display: none;
 </div>
 
 
+<div id="title-event-analysis-on-health-and-economic-impact" class="section level1">
+<h1>Title : Event analysis on health and economic impact</h1>
+</div>
+<div id="synopsis-analyze-noaa-storm-data-to-identify-events-with-the-greatest-impact-on-population-health-and-economic-consequences.-first-cleared-event-type-categories-tidying-up-and-simplifying-categories.-also-changed-damage-exponents-to-multipliers.-then-summarized-total-fatalities-injuries-property-damage-and-crop-damage-by-event-type.-finally-visualized-the-results-using-bar-plots." class="section level1">
+<h1>Synopsis: Analyze NOAA storm data to identify events with the
+greatest impact on population health and economic consequences. First
+cleared event type categories tidying up and simplifying categories.
+Also, changed damage exponents to multipliers. Then summarized total
+fatalities, injuries, property damage, and crop damage by event type.
+Finally, visualized the results using bar plots.</h1>
+</div>
 <div id="load-libraries-and-set-seed" class="section level1">
 <h1>Load libraries and set seed</h1>
 <pre class="r"><code># library load
@@ -388,8 +399,8 @@ set.seed(827)</code></pre>
 ## ℹ Use `spec()` to retrieve the full column specification for this data.
 ## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
 </div>
-<div id="preprocess-data" class="section level1">
-<h1>Preprocess data</h1>
+<div id="data-processing" class="section level1">
+<h1>Data Processing</h1>
 <pre class="r"><code># get only relevant columns
 df_selected &lt;- df %&gt;%
   select(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
@@ -428,8 +439,8 @@ df_converted &lt;- df_filtered %&gt;%
     CROPDMG = CROPDMG * CROPDMGEXP
   ) %&gt;%
   select(-PROPDMGEXP, -CROPDMGEXP)</code></pre>
-<div id="clean-up-evtype" class="section level3">
-<h3>Clean up EVTYPE</h3>
+<div id="clean-up-evtype" class="section level2">
+<h2>Clean up EVTYPE</h2>
 <pre class="r"><code># Standardize event types to uppercase and trim whitespace
 df_converted &lt;- df_converted %&gt;%
   mutate(EVTYPE = toupper(trimws(EVTYPE)))
